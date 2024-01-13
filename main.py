@@ -12,7 +12,7 @@ SCREEN_HEIGHT = 720
 ACCELERATION = 1200
 ANGULAR_ACCELERATION = 600
 AIR_RESISTANCE = 0.5
-FRICTION_COEFFICIENT = 500
+FRICTION_COEFFICIENT = 700
 ANGULAR_FRICTION = 200
 MAX_ANGULAR_VELOCITY = 400
 
@@ -221,11 +221,15 @@ def draw(screen, player: Car):
     rotated_player = pygame.transform.rotate(player.sprite, player.rotation)
 
     angle: float = player.rotation * DEG2RAD
-    radius: float = player.sprite.get_width() / 2
-    center: Vector = Vector(player.position.x - rotated_player.get_width() / 2, player.position.y - rotated_player.get_height() / 2)
+    radius: float = player.sprite.get_width() * 0.28
+    center: Vector = Vector(player.position.x - rotated_player.get_width() * 0.5, player.position.y - rotated_player.get_height() * 0.5)
     final: Vector = Vector(center.x + radius * np.cos(angle), center.y - radius * np.sin(angle))
 
     screen.blit(rotated_player, (final.x, final.y))
+
+    # Draws a cross on relevant points
+    pygame.draw.line(screen, (0, 255, 0), (player.position.x - 10, player.position.y), (player.position.x + 10, player.position.y), 2)
+    pygame.draw.line(screen, (0, 255, 0), (player.position.x, player.position.y - 10), (player.position.x, player.position.y + 10), 2)
 
     pygame.display.flip()
 
