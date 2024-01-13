@@ -67,6 +67,37 @@ class Vector:
         return self / self.magnitude()
 
 
+class Actions:
+    forward: bool
+    backward: bool
+    left: bool
+    right: bool
+
+
+class InputHandler:
+    def __init__(self):
+        self.fullscreen = False
+
+    def update(self):
+        self.pressed = pygame.key.get_pressed()
+
+    def get_global(self):
+        pressed = self.pressed
+        last_fullscreen = self.fullscreen
+        self.fullscreen = pressed[pygame.K_F11]
+        self.fullscreen_p = self.fullscreen and not last_fullscreen
+        return self
+
+    def get_actions(self) -> Actions:
+        pressed = self.pressed
+        actions = Actions()
+        actions.forward  = pressed[pygame.K_UP]    or pressed[ord("w")]
+        actions.backward = pressed[pygame.K_DOWN]  or pressed[ord("s")]
+        actions.left     = pressed[pygame.K_LEFT]  or pressed[ord("a")]
+        actions.right    = pressed[pygame.K_RIGHT] or pressed[ord("d")]
+        return actions
+
+
 class Car:
     def __init__(self, spawnpoint: Vector, sprite, acceleration: float, angular_acceleration: float, air_resistance: float, friction_coefficient: float, angular_friction: float):
         self.sprite = sprite
@@ -136,12 +167,14 @@ def main():
     pygame.display.set_caption("Car Simulation")
 
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    fullscreen = False
 
     running = True
 
+    inputs = InputHandler()
+
     player_sprite = pygame.image.load("red_car.png")
     player_sprite = pygame.transform.scale(player_sprite, (0.5 * player_sprite.get_width(), 0.5 * player_sprite.get_height()))
-
     spawnpoint = Vector(100, 100)
     player = Car(spawnpoint, player_sprite, ACCELERATION * spf, ANGULAR_ACCELERATION * spf, AIR_RESISTANCE, FRICTION_COEFFICIENT, ANGULAR_FRICTION)
 
@@ -153,21 +186,28 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        pressed = pygame.key.get_pressed()
+        # Handle input
+        inputs.update()
+        inputs = inputs.get_global()
 
-        down = pressed[pygame.K_DOWN] or pressed[ord("s")]
-        up = pressed[pygame.K_UP] or pressed[ord("w")]
-        left = pressed[pygame.K_LEFT] or pressed[ord("a")]
-        right = pressed[pygame.K_RIGHT] or pressed[ord("d")]
+        if inputs.fullscreen_p:
+            if fullscreen:
+                screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+                fullscreen = False  
+            else:
+                screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                fullscreen = True
+
+        actions = inputs.get_actions()
 
         # Handle input
-        if down:
-            player.accelerate(-1)
-        if up:
+        if actions.forward:
             player.accelerate(1)
-        if left:
+        if actions.backward:
+            player.accelerate(-1)
+        if actions.left:
             player.rotate(1)
-        if right:
+        if actions.right:
             player.rotate(-1)
 
         # Update transform
