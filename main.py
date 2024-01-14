@@ -1,165 +1,47 @@
 import pygame
 import numpy as np
-from typing import Self
 
-clock = pygame.time.Clock()
+from gamelib import *
+from dqn import DQN
 
-# Constants
-DEG2RAD = np.pi / 180
-FPS = 60
+
+# Parameters
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
+
+FPS = 60
+
 ACCELERATION = 1200
 ANGULAR_ACCELERATION = 600
+
 AIR_RESISTANCE = 0.5
 FRICTION_COEFFICIENT = 700
 ANGULAR_FRICTION = 200
 MAX_ANGULAR_VELOCITY = 400
 
-
-class Vector:
-    def __init__(self, x, y):
-        self.x: float = x
-        self.y: float = y
-
-    def __neg__(self) -> Self:
-        return Vector(-self.x, -self.y)
-
-    def __add__(self, other: Self) -> Self:
-        return Vector(self.x + other.x, self.y + other.y)
-
-    def __sub__(self, other: Self) -> Self:
-        return Vector(self.x - other.x, self.y - other.y)
-
-    def __mul__(self, scalar: float) -> Self:
-        return Vector(scalar * self.x, scalar * self.y)
-
-    def __truediv__(self, scalar: float) -> Self:
-        if scalar == 0:
-            return Vector(0, 0)
-
-        return self * (1/scalar)
-
-    def __pow__(self, power, modulo=None) -> Self:
-        return Vector(np.sign(self.x) * np.fabs(self.x) ** power, np.sign(self.y) * np.fabs(self.y) ** power)
-
-    def __str__(self) -> str:
-        return "(%f, %f)" % (self.x, self.y)
-
-    def magnitude(self) -> float:
-        return np.sqrt(self.sqrmagnitude())
-
-    def sqrmagnitude(self) -> float:
-        return self.x * self.x + self.y * self.y
-
-    def angle(self) -> float:
-        if self.x == 0:
-            return 0
-
-        return np.arctan(self.y / self.x)
-
-    def normalized(self) -> Self:
-        magnitude: float = self.magnitude()
-
-        if magnitude == 0:
-            return Vector(1, 0)
-
-        return self / self.magnitude()
+# Agents
+# 0 => Player
+# 1 => ML Agent (does not learn)
+# 2 => ML Agent (that learns)
+CRIMINAL_AGENT = 1
+POLICE_AGENT = 0
 
 
-class Actions:
-    forward: bool
-    backward: bool
-    left: bool
-    right: bool
-
-
-class InputHandler:
-    def __init__(self):
-        self.fullscreen = False
-
-    def update(self):
-        self.pressed = pygame.key.get_pressed()
-
-    def get_global(self):
-        pressed = self.pressed
-        last_fullscreen = self.fullscreen
-        self.fullscreen = pressed[pygame.K_F11]
-        self.fullscreen_p = self.fullscreen and not last_fullscreen
-        return self
-
-    def get_actions(self) -> Actions:
-        pressed = self.pressed
-        actions = Actions()
-        actions.forward  = pressed[pygame.K_UP]    or pressed[ord("w")]
-        actions.backward = pressed[pygame.K_DOWN]  or pressed[ord("s")]
-        actions.left     = pressed[pygame.K_LEFT]  or pressed[ord("a")]
-        actions.right    = pressed[pygame.K_RIGHT] or pressed[ord("d")]
-        return actions
-
-
-class Car:
-    def __init__(self, spawnpoint: Vector, sprite, acceleration: float, angular_acceleration: float, air_resistance: float, friction_coefficient: float, angular_friction: float):
-        self.sprite = sprite
-
-        self.position: Vector = spawnpoint
-        self.rotation: float = 0
-
-        self.acceleration: float = acceleration
-        self.angular_acceleration: float = angular_acceleration
-
-        self.velocity: Vector = Vector(0, 0)
-        self.angular_velocity: float = 0
-
-        self.air_resistance: float = air_resistance
-        self.friction_coefficient: float = friction_coefficient
-        self.angular_friction: float = angular_friction
-
-        self.wheels: float = 0
-
-    def accelerate(self, multiplier):
-        angle = self.rotation * DEG2RAD
-        self.velocity.x += multiplier * self.acceleration * np.cos(angle)
-        self.velocity.y -= multiplier * self.acceleration * np.sin(angle)
-
-    def rotate(self, multiplier):
-        self.angular_velocity += multiplier * self.angular_acceleration
-
-        if np.fabs(self.angular_velocity) > MAX_ANGULAR_VELOCITY:
-            self.angular_velocity = MAX_ANGULAR_VELOCITY * np.sign(self.angular_velocity)
-
-    def update(self, spf):
-        self.position += self.velocity * spf
-        self.rotation += self.angular_velocity * spf
-
-        friction_force = -self.velocity.normalized() * (self.friction_coefficient * np.fabs(np.sin(self.velocity.angle() - self.rotation * DEG2RAD)))
-        delta_v = friction_force * spf
-
-        if self.velocity.magnitude() < delta_v.magnitude():
-            self.velocity = Vector(0, 0)
-        else:
-            self.velocity += delta_v
-
-        air_resistance_force = self.velocity * self.air_resistance
-        self.velocity -= air_resistance_force * spf
-
-        angular_friction_torque = -np.sign(self.angular_velocity) * self.angular_friction
-        delta_rot = angular_friction_torque * spf
-
-        if np.fabs(self.angular_velocity) < np.fabs(delta_rot):
-            self.angular_velocity = 0
-        else:
-            self.angular_velocity += delta_rot
+# Library objects
+clock = pygame.time.Clock()
 
 
 # Global variables
 fps = FPS
 spf = 1 / fps
 
-player: Car = None
+criminal: Car = None
+police: Car = None
 
 
 def main():
+    global criminal, police
+
     pygame.init()
 
     icon = pygame.image.load("icon.png")
@@ -173,10 +55,22 @@ def main():
 
     inputs = InputHandler()
 
-    player_sprite = pygame.image.load("red_car.png")
-    player_sprite = pygame.transform.scale(player_sprite, (0.5 * player_sprite.get_width(), 0.5 * player_sprite.get_height()))
+    criminal_sprite = pygame.image.load("red_car.png")
+    criminal_sprite = pygame.transform.scale(criminal_sprite, (0.5 * criminal_sprite.get_width(), 0.5 * criminal_sprite.get_height()))
     spawnpoint = Vector(100, 100)
-    player = Car(spawnpoint, player_sprite, ACCELERATION * spf, ANGULAR_ACCELERATION * spf, AIR_RESISTANCE, FRICTION_COEFFICIENT, ANGULAR_FRICTION)
+    criminal = Car(spawnpoint, criminal_sprite, ACCELERATION * spf, ANGULAR_ACCELERATION * spf, AIR_RESISTANCE, FRICTION_COEFFICIENT, ANGULAR_FRICTION)
+    
+    police_sprite = pygame.image.load("police_car.png")
+    police_sprite = pygame.transform.scale(police_sprite, (0.5 * police_sprite.get_width(), 0.5 * police_sprite.get_height()))
+    spawnpoint = Vector(200, 300)
+    police = Car(spawnpoint, police_sprite, ACCELERATION * spf, ANGULAR_ACCELERATION * spf, AIR_RESISTANCE, FRICTION_COEFFICIENT, ANGULAR_FRICTION)
+
+
+    # Setup DQN
+    lr = 0.001
+    epsilon = 1.0
+    epsilon_decay = 0.995
+    gamma = 0.99
 
 
     while running:
@@ -198,38 +92,38 @@ def main():
                 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
                 fullscreen = True
 
-        actions = inputs.get_actions()
+        if not (CRIMINAL_AGENT and POLICE_AGENT):
+            actions = inputs.get_actions()
+            player = criminal if not CRIMINAL_AGENT else police
 
-        # Handle input
-        if actions.forward:
-            player.accelerate(1)
-        if actions.backward:
-            player.accelerate(-1)
-        if actions.left:
-            player.rotate(1)
-        if actions.right:
-            player.rotate(-1)
+            # Handle input
+            if actions.forward:
+                player.accelerate(1)
+            if actions.backward:
+                player.accelerate(-1)
+            if actions.left:
+                player.rotate(1)
+            if actions.right:
+                player.rotate(-1)
 
         # Update transform
-        player.update(spf)
+        criminal.update(spf)
+        police.update(spf)
 
-        draw(screen, player)
+        draw(screen)
 
 
-def draw(screen, player: Car):
+def draw(screen):
+    global criminal, police
+
     screen.fill((100, 100, 100))
-    rotated_player = pygame.transform.rotate(player.sprite, player.rotation)
-
-    angle: float = player.rotation * DEG2RAD
-    radius: float = player.sprite.get_width() * 0.28
-    center: Vector = Vector(player.position.x - rotated_player.get_width() * 0.5, player.position.y - rotated_player.get_height() * 0.5)
-    final: Vector = Vector(center.x + radius * np.cos(angle), center.y - radius * np.sin(angle))
-
-    screen.blit(rotated_player, (final.x, final.y))
+    
+    criminal.blit(screen)
+    police.blit(screen)
 
     # Draws a cross on relevant points
-    pygame.draw.line(screen, (0, 255, 0), (player.position.x - 10, player.position.y), (player.position.x + 10, player.position.y), 2)
-    pygame.draw.line(screen, (0, 255, 0), (player.position.x, player.position.y - 10), (player.position.x, player.position.y + 10), 2)
+    # pygame.draw.line(screen, (0, 255, 0), (player.position.x - 10, player.position.y), (player.position.x + 10, player.position.y), 2)
+    # pygame.draw.line(screen, (0, 255, 0), (player.position.x, player.position.y - 10), (player.position.x, player.position.y + 10), 2)
 
     pygame.display.flip()
 
