@@ -1,3 +1,4 @@
+from typing import Tuple
 import numpy as np
 import pandas as pd
 import random
@@ -8,17 +9,24 @@ import tensorflow as tf
 keras = tf.keras
 
 
+class ActionSpace:
+    def __init__(self, n: int):
+        self.n = n
+
+
 class Environment:
-    action_space: any
-    observation_space: any
+    action_space: ActionSpace
+    observation_space: np.ndarray
 
-    def reset(self):
+    def render(self) -> None:
         pass
 
-    def render(self):
+    # Returns state
+    def reset(self) -> np.ndarray:
         pass
 
-    def step(self, action):
+    # Returns next_state, reward, done, info
+    def step(self, action: np.array) -> Tuple[np.ndarray, float, bool, None]:
         pass
 
 
@@ -45,12 +53,12 @@ class DQN:
     def initialize_model(self):
         model = keras.Sequential()
         model.add(keras.layers.Dense(512, input_dim=self.num_observation_space, activation=keras.activations.relu))
-        model.add(keras.layers.Dense(256, activation=keras.relu))
+        model.add(keras.layers.Dense(256, activation=keras.activations.relu))
         model.add(keras.layers.Dense(self.num_action_space, activation=keras.activations.linear))
 
         # Compile the model
         model.compile(loss=keras.losses.mean_squared_error,optimizer=keras.optimizers.Adam(lr=self.lr))
-        print(model.summary())
+        # print(model.summary())
         return model
 
     def get_action(self, state):
@@ -104,7 +112,6 @@ class DQN:
             for step in range(num_steps):
                 env.render()
                 received_action = self.get_action(state)
-                # print("received_action:", received_action)
                 next_state, reward, done, info = env.step(received_action)
                 next_state = np.reshape(next_state, [1, self.num_observation_space])
                 # Store the experience in replay memory

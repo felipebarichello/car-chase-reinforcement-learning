@@ -7,7 +7,7 @@ import pickle
 import tensorflow as tf
 
 from gamelib import *
-from dqn import DQN, Environment
+from dqn import DQN, Environment, ActionSpace
 
 keras = tf.keras
 
@@ -16,7 +16,9 @@ keras = tf.keras
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 
-FPS = 60
+I_SCREEN_HEIGHT = 1 / SCREEN_HEIGHT
+
+FPS = 46
 
 CAR_SCALING = 0.3
 
@@ -29,13 +31,20 @@ ANGULAR_FRICTION = 200
 MAX_ANGULAR_VELOCITY = 400
 
 SAFE_RADIUS = 400
-TIME_TO_CATCH = 8
+TIME_TO_ESCAPE = 8
 
 # 0 => Player controls criminal; ML agent controls police
 # 1 => Player controls police; ML agent controls criminal
-# 2 => ML Agents control both
-# 3 => ML Agents train against each other
-ML_MODE = 3
+# 2 => ML Agents control both, but do not learn
+# 3 => ML Agents control both, and criminal learns
+# 4 => ML Agents control both, and police learns
+ML_MODE = 4
+
+C_DIST_REWARD = 5
+C_CHASE_DURATION_REWARD = 2
+P_CLOSE_REWARD = 5
+
+EPISODES = 1
 
 # Whether or not to render the game
 RENDER = True
@@ -78,7 +87,7 @@ def main():
     inputs = None
 
 
-    if ML_MODE == 2:
+    if ML_MODE >= 3:
         # Setup DQN
         env = make_env()
 
@@ -87,15 +96,15 @@ def main():
         epsilon = 1.0
         epsilon_decay = 0.995
         gamma = 0.99
-        training_episodes = 2000
+        training_episodes = EPISODES
         print('St')
         model = DQN(env, lr, gamma, epsilon, epsilon_decay)
-        model.train(training_episodes, True)
+        model.train(env, training_episodes, False)
 
         # Save Everything
         save_dir = "saved_models"
         # Save trained model
-        model.save(save_dir + "trained_model.h5")
+        model.save(save_dir + "trained_model.keras")
 
         # Save Rewards list
         pickle.dump(model.rewards_list, open(save_dir + "train_rewards_list.p", "wb"))
@@ -135,7 +144,7 @@ def main():
             reset()
             continue
 
-        draw(screen)
+        draw()
 
 
 def setup():
@@ -166,7 +175,7 @@ def reset():
     criminal.rest()
     police.rest()
 
-    timer = TIME_TO_CATCH * fps
+    timer = TIME_TO_ESCAPE * fps
 
 
 def input_update(inputs: InputHandler) -> Tuple[Actions, Actions]:
@@ -232,8 +241,8 @@ def update(actions: Tuple[Actions, Actions]) -> int:
     return 0
 
 
-def draw(screen):
-    global criminal, police
+def draw():
+    global screen, criminal, police
 
     screen.fill((100, 100, 100))
     
@@ -255,12 +264,7 @@ def make_env() -> Environment:
     env = Environment()
     env.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-    env.action_space = np.array([
-        0, # Forward
-        0, # Backward
-        0, # Left
-        0, # Right
-    ])
+    env.action_space = ActionSpace(9) # forward, backward, left, right
 
     env.observation_space = np.array([
         0, # x position
@@ -278,11 +282,96 @@ def make_env() -> Environment:
         0, # opponent angular velocity
     ])
 
-    env.reset = reset
-    env.step = update
-    env.render = draw
+    env.reset = env_reset.__get__(env)
+    env.step  = env_step.__get__(env)
+
+    if RENDER:
+        env.render = env_render.__get__(env)
+    else:
+        env.render = env_not_render.__get__(env)
+
+    if ML_MODE == 3:
+        env.reward_continuous = (lambda self: criminal.position.distance(police.position) * I_SCREEN_HEIGHT * C_DIST_REWARD * spf).__get__(env)
+        env.reward_caught = (lambda self: -100 + timer * spf * C_CHASE_DURATION_REWARD).__get__(env)
+        env.reward_escaped = (lambda self: 100).__get__(env)
+    elif ML_MODE == 4:
+        env.reward_continuous = (lambda self: P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_HEIGHT) * spf).__get__(env)
+        env.reward_caught = (lambda self: 100 + self.reward_continuous() * (1 + TIME_TO_ESCAPE - timer)).__get__(env)
+        env.reward_escaped = (lambda self: -100).__get__(env)
 
     return env
+
+
+def get_state() -> np.ndarray:
+    if ML_MODE == 3:
+        return np.array([
+            criminal.position.x, criminal.position.y,
+            criminal.velocity.magnitude(), criminal.velocity.angle(),
+            criminal.rotation, criminal.angular_velocity,
+            criminal.position.distance(police.position),
+            police.position.x, police.position.y,
+            police.velocity.magnitude(), police.velocity.angle(),
+            police.rotation, police.angular_velocity,
+        ])
+    elif ML_MODE == 4:
+        return np.array([
+            police.position.x, police.position.y,
+            police.velocity.magnitude(), police.velocity.angle(),
+            police.rotation, police.angular_velocity,
+            police.position.distance(criminal.position),
+            criminal.position.x, criminal.position.y,
+            criminal.velocity.magnitude(), criminal.velocity.angle(),
+            criminal.rotation, criminal.angular_velocity,
+        ])
+
+
+# Returns state
+def env_reset(self: Environment) -> np.ndarray:
+    reset()
+    return get_state()
+
+
+# Returns next_state, reward, done, info
+def env_step(self: Environment, action: int) -> Tuple[np.ndarray, float, bool, None]:
+    agent_actions = Actions()
+    agent_actions.forward  = True if action <  3 else False
+    agent_actions.backward = True if action >= 6 else False
+    agent_actions.left     = True if action % 3 == 0 else False
+    agent_actions.right    = True if action % 3 == 2 else False
+
+    other_actions = Actions()
+    other_actions.forward = 0
+    other_actions.backward = 0
+    other_actions.left = 0
+    other_actions.right = 0
+
+    result: int
+
+    if ML_MODE == 3:
+        result = update((agent_actions, other_actions))
+    elif ML_MODE == 4:
+        result = update((other_actions, agent_actions))
+        
+    next_state = get_state()
+    reward = 0
+    done = result != 0
+
+    if not done:
+        reward = self.reward_continuous()
+    elif result == 1:
+        reward = self.reward_caught()
+    elif result == -1:
+        reward = self.reward_escaped()
+
+    return next_state, reward, done, None
+
+
+def env_render(env: Environment) -> None:
+    draw()
+
+
+def env_not_render(env: Environment) -> None:
+    pass
 
 
 def test_already_trained_model(trained_model):
@@ -363,16 +452,12 @@ def run_experiment_for_gamma():
     print('Running Experiment for gamma...')
     env = make_env()
 
-    # set seeds
-    env.seed(21)
-    np.random.seed(21)
-
     # setting up params
     lr = 0.001
     epsilon = 1.0
     epsilon_decay = 0.995
     gamma_list = [0.99, 0.9, 0.8, 0.7]
-    training_episodes = 1000
+    training_episodes = EPISODES
 
     rewards_list_for_gammas = []
     for gamma_value in gamma_list:
@@ -397,16 +482,12 @@ def run_experiment_for_lr():
     print('Running Experiment for learning rate...')
     env = make_env()
 
-    # set seeds
-    env.seed(21)
-    np.random.seed(21)
-
     # setting up params
     lr_values = [0.0001, 0.001, 0.01, 0.1]
     epsilon = 1.0
     epsilon_decay = 0.995
     gamma = 0.99
-    training_episodes = 1000
+    training_episodes = EPISODES
     rewards_list_for_lrs = []
     for lr_value in lr_values:
         model = DQN(env, lr_value, gamma, epsilon, epsilon_decay)
@@ -428,16 +509,12 @@ def run_experiment_for_ed():
     print('Running Experiment for epsilon decay...')
     env = make_env()
 
-    # set seeds
-    env.seed(21)
-    np.random.seed(21)
-
     # setting up params
     lr = 0.001
     epsilon = 1.0
     ed_values = [0.999, 0.995, 0.990, 0.9]
     gamma = 0.99
-    training_episodes = 1000
+    training_episodes = EPISODES
 
     rewards_list_for_ed = []
     for ed in ed_values:
