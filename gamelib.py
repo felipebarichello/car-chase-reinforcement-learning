@@ -155,6 +155,16 @@ class Car:
         else:
             self.angular_velocity += delta_rot
 
+    def act(self, actions: Actions, spf: float):
+        if actions.forward:
+            self.accelerate(1, spf)
+        if actions.backward:
+            self.accelerate(-1, spf)
+        if actions.left:
+            self.rotate(1, spf)
+        if actions.right:
+            self.rotate(-1, spf)
+
     def get_hitbox(self) -> pygame.Rect:
         rotated_sprite = pygame.transform.rotate(self.sprite, self.rotation)
 

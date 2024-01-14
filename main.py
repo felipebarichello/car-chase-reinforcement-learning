@@ -1,3 +1,4 @@
+from typing import Tuple
 import pygame
 import numpy as np
 import pandas as pd
@@ -28,13 +29,13 @@ ANGULAR_FRICTION = 200
 MAX_ANGULAR_VELOCITY = 400
 
 SAFE_RADIUS = 400
-TIME_TO_CATCH = 10
+TIME_TO_CATCH = 8
 
 # 0 => Player controls criminal; ML agent controls police
 # 1 => Player controls police; ML agent controls criminal
 # 2 => ML Agents control both
 # 3 => ML Agents train against each other
-ML_MODE = 1
+ML_MODE = 3
 
 # Whether or not to render the game
 RENDER = True
@@ -53,6 +54,8 @@ fullscreen: bool = False
 
 criminal: Car = None
 police: Car = None
+
+timer: int
 
 
 def main():
@@ -128,7 +131,7 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        if update(inputs) != 0:
+        if update(input_update(inputs)) != 0:
             reset()
             continue
 
@@ -148,7 +151,7 @@ def setup():
 
 
 def reset():
-    global criminal, police
+    global criminal, police, timer
 
     while True:
         criminal.position = Vector(np.random.rand() * SCREEN_WIDTH, np.random.rand() * SCREEN_HEIGHT)
@@ -163,38 +166,45 @@ def reset():
     criminal.rest()
     police.rest()
 
+    timer = TIME_TO_CATCH * fps
+
+
+def input_update(inputs: InputHandler) -> Tuple[Actions, Actions]:
+    global screen, fullscreen
+
+    inputs.update()
+    inputs.get_global()
+
+    if inputs.fullscreen_p:
+        if fullscreen:
+            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            fullscreen = False
+        else:
+            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+            fullscreen = True
+
+    c_actions = inputs.get_actions() if ML_MODE == 0 else actions_from_nn(criminal, police)
+    p_actions = inputs.get_actions() if ML_MODE == 1 else actions_from_nn(police, criminal)
+
+    return (c_actions, p_actions)
+
+
+def actions_from_nn(car: Car, other: Car) -> Actions:
+    actions = Actions()
+    actions.forward = False
+    actions.backward = False
+    actions.left = False
+    actions.right = False
+    return actions
+
 
 # Returns 0 if game is still running, 1 if police wins, -1 if criminal wins
-def update(inputs: InputHandler = None) -> int:
-    global criminal, police, screen, fullscreen
-    
-    # Handle input
+def update(actions: Tuple[Actions, Actions]) -> int:
+    global criminal, police, timer
 
-    if inputs:
-        inputs.update()
-
-        inputs.get_global()
-    
-        if inputs.fullscreen_p:
-            if fullscreen:
-                screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-                fullscreen = False  
-            else:
-                screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
-                fullscreen = True
-
-        actions = inputs.get_actions()
-        player = criminal if ML_MODE == 0 else police
-
-        # Handle input
-        if actions.forward:
-            player.accelerate(1, spf)
-        if actions.backward:
-            player.accelerate(-1, spf)
-        if actions.left:
-            player.rotate(1, spf)
-        if actions.right:
-            player.rotate(-1, spf)
+    # Handle actions
+    criminal.act(actions[0], spf)
+    police.act(actions[1], spf)
 
     # Update transform
     criminal.update(spf)
@@ -210,8 +220,11 @@ def update(inputs: InputHandler = None) -> int:
     ):
         return 1
     
+    timer -= 1
+    
     if (
-           police_hitbox.left < 0 or police_hitbox.right > (SCREEN_WIDTH)
+        timer <= 0
+        or police_hitbox.left < 0 or police_hitbox.right > (SCREEN_WIDTH)
         or police_hitbox.top  < 0 or police_hitbox.bottom > (SCREEN_HEIGHT)
     ):
         return -1
