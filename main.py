@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import pickle
 import tensorflow as tf
+import os
 
 from gamelib import *
 from dqn import DQN, Environment, ActionSpace
@@ -45,6 +46,9 @@ C_CHASE_DURATION_REWARD = 2
 P_CLOSE_REWARD = 5
 
 MAX_EPISODES = 10
+
+LOAD_MODEL = True
+MODEL_DIR = "saved_models/"
 
 # Whether or not to render the game when ML_MODE greater than 2
 RENDER = True
@@ -100,25 +104,41 @@ def main():
         epsilon_decay = 0.995
         gamma = 0.99
         training_episodes = MAX_EPISODES
-        print('St')
+        save_dir: str
+
+        if ML_MODE == 3:
+            save_dir = MODEL_DIR + "criminal/"
+        elif ML_MODE == 4:
+            save_dir = MODEL_DIR + "police/"
+
         model = DQN(env, lr, gamma, epsilon, epsilon_decay)
+        
+        if LOAD_MODEL:
+            try:
+                model.model = keras.models.load_model(save_dir + "model.keras")
+                model.epsilon = pickle.loads(open(save_dir + "network.pkl", "rb").read())
+            except:
+                pass
+
         model.train(env, training_episodes, False, SECONDS_TO_ESCAPE * fps * 2) # Should never be reached
 
-        # Save Everything
-        save_dir = "saved_models/"
         # Save trained model
-        model.save(save_dir + "trained_model.keras")
+        os.makedirs(save_dir, exist_ok=True)
+        model.save(save_dir + "model.keras")
+
+        with open(save_dir + "network.pkl", "wb") as file:
+            file.write(pickle.dumps(model.epsilon))
 
         # Save Rewards list
-        pickle.dump(model.rewards_list, open(save_dir + "train_rewards_list.p", "wb"))
-        rewards_list = pickle.load(open(save_dir + "train_rewards_list.p", "rb"))
+        pickle.dump(model.rewards_list, open(save_dir + "rewards_list.p", "wb"))
+        rewards_list = pickle.load(open(save_dir + "rewards_list.p", "rb"))
 
         # plot reward in graph
         reward_df = pd.DataFrame(rewards_list)
         plot_df(reward_df, "Figure 1: Reward for each training episode", "Reward for each training episode", "Episode","Reward")
 
         # # Test the model
-        # trained_model = keras.models.load_model(save_dir + "trained_model.h5")
+        # trained_model = keras.models.load_model(save_dir + "trained_model.keras")
         # test_rewards = test_already_trained_model(trained_model)
         # pickle.dump(test_rewards, open(save_dir + "test_rewards.p", "wb"))
         # test_rewards = pickle.load(open(save_dir + "test_rewards.p", "rb"))
