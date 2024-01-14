@@ -73,8 +73,10 @@ class Actions:
 
 
 class InputHandler:
+    fullscreen_p: bool
+
     def __init__(self):
-        self.fullscreen = False
+        self.fullscreen: bool = False
 
     def update(self):
         self.pressed = pygame.key.get_pressed()

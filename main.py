@@ -48,12 +48,15 @@ clock = pygame.time.Clock()
 fps = FPS
 spf = 1 / fps
 
+screen: pygame.Surface
+fullscreen: bool = False
+
 criminal: Car = None
 police: Car = None
 
 
 def main():
-    global criminal, police
+    global criminal, police, screen
 
     np.random.seed()
     pygame.init()
@@ -163,21 +166,23 @@ def reset():
 
 # Returns 0 if game is still running, 1 if police wins, -1 if criminal wins
 def update(inputs: InputHandler = None) -> int:
-    global criminal, police
+    global criminal, police, screen, fullscreen
     
     # Handle input
 
-    # if inputs.fullscreen_p:
-    #     if fullscreen:
-    #         screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    #         fullscreen = False  
-    #     else:
-    #         screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    #         fullscreen = True
-
     if inputs:
         inputs.update()
-        inputs = inputs.get_global()
+
+        inputs.get_global()
+    
+        if inputs.fullscreen_p:
+            if fullscreen:
+                screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+                fullscreen = False  
+            else:
+                screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+                fullscreen = True
+
         actions = inputs.get_actions()
         player = criminal if ML_MODE == 0 else police
 
