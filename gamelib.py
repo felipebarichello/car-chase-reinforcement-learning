@@ -73,16 +73,19 @@ class Actions:
 
 
 class InputHandler:
+    quit: bool
+    fullscreen: bool
     fullscreen_p: bool
 
     def __init__(self):
-        self.fullscreen: bool = False
+        self.fullscreen = False
 
     def update(self):
         self.pressed = pygame.key.get_pressed()
 
     def get_global(self):
         pressed = self.pressed
+        self.quit = pressed[pygame.K_ESCAPE]
         last_fullscreen = self.fullscreen
         self.fullscreen = pressed[pygame.K_F11]
         self.fullscreen_p = self.fullscreen and not last_fullscreen
@@ -96,6 +99,8 @@ class InputHandler:
         actions.left     = pressed[pygame.K_LEFT]  or pressed[ord("a")]
         actions.right    = pressed[pygame.K_RIGHT] or pressed[ord("d")]
         return actions
+    
+
 
 
 class Car:

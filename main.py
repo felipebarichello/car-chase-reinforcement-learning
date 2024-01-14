@@ -18,7 +18,7 @@ SCREEN_HEIGHT = 720
 
 I_SCREEN_HEIGHT = 1 / SCREEN_HEIGHT
 
-FPS = 46
+FPS = 60
 
 CAR_SCALING = 0.3
 
@@ -31,7 +31,7 @@ ANGULAR_FRICTION = 200
 MAX_ANGULAR_VELOCITY = 400
 
 SAFE_RADIUS = 400
-TIME_TO_ESCAPE = 8
+SECONDS_TO_ESCAPE = 8
 
 # 0 => Player controls criminal; ML agent controls police
 # 1 => Player controls police; ML agent controls criminal
@@ -44,9 +44,9 @@ C_DIST_REWARD = 5
 C_CHASE_DURATION_REWARD = 2
 P_CLOSE_REWARD = 5
 
-EPISODES = 1
+MAX_EPISODES = 10
 
-# Whether or not to render the game
+# Whether or not to render the game when ML_MODE greater than 2
 RENDER = True
 
 
@@ -58,17 +58,20 @@ clock = pygame.time.Clock()
 fps = FPS
 spf = 1 / fps
 
+quit_requested: bool
+
+inputs: InputHandler
 screen: pygame.Surface
 fullscreen: bool = False
 
 criminal: Car = None
 police: Car = None
 
-timer: int
+frames_to_escape: int
 
 
 def main():
-    global criminal, police, screen
+    global criminal, police, screen, quit_requested, inputs
 
     np.random.seed()
     pygame.init()
@@ -80,11 +83,11 @@ def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     # fullscreen = False
 
-    running = True
+    quit_requested = False
 
     setup()
 
-    inputs = None
+    inputs = InputHandler()
 
 
     if ML_MODE >= 3:
@@ -96,13 +99,13 @@ def main():
         epsilon = 1.0
         epsilon_decay = 0.995
         gamma = 0.99
-        training_episodes = EPISODES
+        training_episodes = MAX_EPISODES
         print('St')
         model = DQN(env, lr, gamma, epsilon, epsilon_decay)
-        model.train(env, training_episodes, False)
+        model.train(env, training_episodes, False, SECONDS_TO_ESCAPE * fps * 2) # Should never be reached
 
         # Save Everything
-        save_dir = "saved_models"
+        save_dir = "saved_models/"
         # Save trained model
         model.save(save_dir + "trained_model.keras")
 
@@ -114,33 +117,36 @@ def main():
         reward_df = pd.DataFrame(rewards_list)
         plot_df(reward_df, "Figure 1: Reward for each training episode", "Reward for each training episode", "Episode","Reward")
 
-        # Test the model
-        trained_model = keras.models.load_model(save_dir + "trained_model.h5")
-        test_rewards = test_already_trained_model(trained_model)
-        pickle.dump(test_rewards, open(save_dir + "test_rewards.p", "wb"))
-        test_rewards = pickle.load(open(save_dir + "test_rewards.p", "rb"))
+        # # Test the model
+        # trained_model = keras.models.load_model(save_dir + "trained_model.h5")
+        # test_rewards = test_already_trained_model(trained_model)
+        # pickle.dump(test_rewards, open(save_dir + "test_rewards.p", "wb"))
+        # test_rewards = pickle.load(open(save_dir + "test_rewards.p", "rb"))
 
-        plot_df2(pd.DataFrame(test_rewards), "Figure 2: Reward for each testing episode","Reward for each testing episode", "Episode", "Reward")
-        print("Training and Testing Completed...!")
+        # plot_df2(pd.DataFrame(test_rewards), "Figure 2: Reward for each testing episode","Reward for each testing episode", "Episode", "Reward")
+        # print("Training and Testing Completed...!")
 
         # Run experiments for hyper-parameter
-        run_experiment_for_lr()
-        run_experiment_for_ed()
-        run_experiment_for_gamma()
-    else:
-        inputs = InputHandler()
+        # run_experiment_for_lr()
+        # run_experiment_for_ed()
+        # run_experiment_for_gamma()
 
+        return
+    
 
     reset()
 
-    while running:
+    while True:
         clock.tick(fps)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                quit_requested = True
 
-        if update(input_update(inputs)) != 0:
+        if quit_requested:
+            break
+
+        if update(input_update()) != 0:
             reset()
             continue
 
@@ -160,7 +166,7 @@ def setup():
 
 
 def reset():
-    global criminal, police, timer
+    global criminal, police, frames_to_escape
 
     while True:
         criminal.position = Vector(np.random.rand() * SCREEN_WIDTH, np.random.rand() * SCREEN_HEIGHT)
@@ -175,14 +181,17 @@ def reset():
     criminal.rest()
     police.rest()
 
-    timer = TIME_TO_ESCAPE * fps
+    frames_to_escape = SECONDS_TO_ESCAPE * fps
 
 
-def input_update(inputs: InputHandler) -> Tuple[Actions, Actions]:
-    global screen, fullscreen
+def input_update() -> Tuple[Actions, Actions]:
+    global screen, fullscreen, quit_requested, inputs
 
     inputs.update()
     inputs.get_global()
+
+    if inputs.quit:
+        quit_requested = True
 
     if inputs.fullscreen_p:
         if fullscreen:
@@ -209,7 +218,7 @@ def actions_from_nn(car: Car, other: Car) -> Actions:
 
 # Returns 0 if game is still running, 1 if police wins, -1 if criminal wins
 def update(actions: Tuple[Actions, Actions]) -> int:
-    global criminal, police, timer
+    global criminal, police, frames_to_escape
 
     # Handle actions
     criminal.act(actions[0], spf)
@@ -229,10 +238,10 @@ def update(actions: Tuple[Actions, Actions]) -> int:
     ):
         return 1
     
-    timer -= 1
+    frames_to_escape -= 1
     
     if (
-        timer <= 0
+        frames_to_escape <= 0
         or police_hitbox.left < 0 or police_hitbox.right > (SCREEN_WIDTH)
         or police_hitbox.top  < 0 or police_hitbox.bottom > (SCREEN_HEIGHT)
     ):
@@ -292,11 +301,11 @@ def make_env() -> Environment:
 
     if ML_MODE == 3:
         env.reward_continuous = (lambda self: criminal.position.distance(police.position) * I_SCREEN_HEIGHT * C_DIST_REWARD * spf).__get__(env)
-        env.reward_caught = (lambda self: -100 + timer * spf * C_CHASE_DURATION_REWARD).__get__(env)
+        env.reward_caught = (lambda self: -100 + frames_to_escape * spf * C_CHASE_DURATION_REWARD).__get__(env)
         env.reward_escaped = (lambda self: 100).__get__(env)
     elif ML_MODE == 4:
         env.reward_continuous = (lambda self: P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_HEIGHT) * spf).__get__(env)
-        env.reward_caught = (lambda self: 100 + self.reward_continuous() * (1 + TIME_TO_ESCAPE - timer)).__get__(env)
+        env.reward_caught = (lambda self: 100 + self.reward_continuous() * (1 + SECONDS_TO_ESCAPE - frames_to_escape)).__get__(env)
         env.reward_escaped = (lambda self: -100).__get__(env)
 
     return env
@@ -333,6 +342,16 @@ def env_reset(self: Environment) -> np.ndarray:
 
 # Returns next_state, reward, done, info
 def env_step(self: Environment, action: int) -> Tuple[np.ndarray, float, bool, None]:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            self.quit_requested = True
+
+    inputs.update()
+    inputs.get_global()
+
+    if inputs.quit:
+        self.quit_requested = True
+
     agent_actions = Actions()
     agent_actions.forward  = True if action <  3 else False
     agent_actions.backward = True if action >= 6 else False
@@ -433,105 +452,6 @@ def plot_df2(df, chart_name, title, x_axis_label, y_axis_label):
     plt.legend().set_visible(False)
     fig = plot.get_figure()
     fig.savefig(chart_name)
-
-
-def plot_experiments(df, chart_name, title, x_axis_label, y_axis_label, y_limit):
-    plt.rcParams.update({'font.size': 17})
-    plt.figure(figsize=(15, 8))
-    plt.close()
-    plt.figure()
-    plot = df.plot(linewidth=1, figsize=(15, 8), title=title)
-    plot.set_xlabel(x_axis_label)
-    plot.set_ylabel(y_axis_label)
-    plt.ylim(y_limit)
-    fig = plot.get_figure()
-    fig.savefig(chart_name)
-
-
-def run_experiment_for_gamma():
-    print('Running Experiment for gamma...')
-    env = make_env()
-
-    # setting up params
-    lr = 0.001
-    epsilon = 1.0
-    epsilon_decay = 0.995
-    gamma_list = [0.99, 0.9, 0.8, 0.7]
-    training_episodes = EPISODES
-
-    rewards_list_for_gammas = []
-    for gamma_value in gamma_list:
-        # save_dir = "hp_gamma_"+ str(gamma_value) + "_"
-        model = DQN(env, lr, gamma_value, epsilon, epsilon_decay)
-        print("Training model for Gamma: {}".format(gamma_value))
-        model.train(training_episodes, False)
-        rewards_list_for_gammas.append(model.rewards_list)
-
-    pickle.dump(rewards_list_for_gammas, open("rewards_list_for_gammas.p", "wb"))
-    rewards_list_for_gammas = pickle.load(open("rewards_list_for_gammas.p", "rb"))
-
-    gamma_rewards_pd = pd.DataFrame(index=pd.Series(range(1, training_episodes + 1)))
-    for i in range(len(gamma_list)):
-        col_name = "gamma=" + str(gamma_list[i])
-        gamma_rewards_pd[col_name] = rewards_list_for_gammas[i]
-    plot_experiments(gamma_rewards_pd, "Figure 4: Rewards per episode for different gamma values",
-                     "Figure 4: Rewards per episode for different gamma values", "Episodes", "Reward", (-600, 300))
-
-
-def run_experiment_for_lr():
-    print('Running Experiment for learning rate...')
-    env = make_env()
-
-    # setting up params
-    lr_values = [0.0001, 0.001, 0.01, 0.1]
-    epsilon = 1.0
-    epsilon_decay = 0.995
-    gamma = 0.99
-    training_episodes = EPISODES
-    rewards_list_for_lrs = []
-    for lr_value in lr_values:
-        model = DQN(env, lr_value, gamma, epsilon, epsilon_decay)
-        print("Training model for LR: {}".format(lr_value))
-        model.train(training_episodes, False)
-        rewards_list_for_lrs.append(model.rewards_list)
-
-    pickle.dump(rewards_list_for_lrs, open("rewards_list_for_lrs.p", "wb"))
-    rewards_list_for_lrs = pickle.load(open("rewards_list_for_lrs.p", "rb"))
-
-    lr_rewards_pd = pd.DataFrame(index=pd.Series(range(1, training_episodes + 1)))
-    for i in range(len(lr_values)):
-        col_name = "lr="+ str(lr_values[i])
-        lr_rewards_pd[col_name] = rewards_list_for_lrs[i]
-    plot_experiments(lr_rewards_pd, "Figure 3: Rewards per episode for different learning rates", "Figure 3: Rewards per episode for different learning rates", "Episodes", "Reward", (-2000, 300))
-
-
-def run_experiment_for_ed():
-    print('Running Experiment for epsilon decay...')
-    env = make_env()
-
-    # setting up params
-    lr = 0.001
-    epsilon = 1.0
-    ed_values = [0.999, 0.995, 0.990, 0.9]
-    gamma = 0.99
-    training_episodes = EPISODES
-
-    rewards_list_for_ed = []
-    for ed in ed_values:
-        save_dir = "hp_ed_"+ str(ed) + "_"
-        model = DQN(env, lr, gamma, epsilon, ed)
-        print("Training model for ED: {}".format(ed))
-        model.train(training_episodes, False)
-        rewards_list_for_ed.append(model.rewards_list)
-
-    pickle.dump(rewards_list_for_ed, open("rewards_list_for_ed.p", "wb"))
-    rewards_list_for_ed = pickle.load(open("rewards_list_for_ed.p", "rb"))
-
-    ed_rewards_pd = pd.DataFrame(index=pd.Series(range(1, training_episodes+1)))
-    for i in range(len(ed_values)):
-        col_name = "epsilon_decay = "+ str(ed_values[i])
-        ed_rewards_pd[col_name] = rewards_list_for_ed[i]
-    plot_experiments(ed_rewards_pd, "Figure 5: Rewards per episode for different epsilon(ε) decay", "Figure 5: Rewards per episode for different epsilon(ε) decay values", "Episodes", "Reward", (-600, 300))
 
 
 if __name__ == "__main__":

@@ -17,6 +17,10 @@ class ActionSpace:
 class Environment:
     action_space: ActionSpace
     observation_space: np.ndarray
+    quit_requested: bool
+
+    def __init__(self):
+        self.quit_requested = False
 
     def render(self) -> None:
         pass
@@ -103,11 +107,10 @@ class DQN:
         random_sample = random.sample(self.replay_memory_buffer, self.batch_size)
         return random_sample
 
-    def train(self, env: Environment, num_episodes=2000, can_stop=True):
+    def train(self, env: Environment, num_episodes=2000, can_stop=True, num_steps=1000):
         for episode in range(num_episodes):
             state = env.reset()
             reward_for_episode = 0
-            num_steps = 1000
             state = np.reshape(state, [1, self.num_observation_space])
             for step in range(num_steps):
                 env.render()
@@ -136,6 +139,9 @@ class DQN:
                 print("DQN Training Complete...")
                 break
             print(episode, "\t: Episode || Reward: ",reward_for_episode, "\t|| Average Reward: ",last_rewards_mean, "\t epsilon: ", self.epsilon )
+
+            if env.quit_requested:
+                break
 
     def update_counter(self):
         self.counter += 1
