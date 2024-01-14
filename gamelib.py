@@ -162,7 +162,7 @@ class Car:
         if actions.forward:
             self.accelerate(1, spf)
         if actions.backward:
-            self.accelerate(-0.8, spf)
+            self.accelerate(-1, spf)
         if actions.left:
             self.rotate(1, spf)
         if actions.right:
