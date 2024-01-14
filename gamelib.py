@@ -101,8 +101,6 @@ class InputHandler:
         return actions
     
 
-
-
 class Car:
     def __init__(self, spawnpoint: Vector, sprite: pygame.Surface, acceleration: float, angular_acceleration: float, air_resistance: float, friction_coefficient: float, angular_friction: float):
         self.sprite: pygame.Surface = sprite
@@ -164,7 +162,7 @@ class Car:
         if actions.forward:
             self.accelerate(1, spf)
         if actions.backward:
-            self.accelerate(-1, spf)
+            self.accelerate(-0.8, spf)
         if actions.left:
             self.rotate(1, spf)
         if actions.right:
