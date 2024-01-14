@@ -127,6 +127,7 @@ class DQN:
 
                 if done:
                     break
+            
             self.rewards_list.append(reward_for_episode)
 
             # Decay the epsilon after each experience completion
