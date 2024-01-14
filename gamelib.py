@@ -43,6 +43,12 @@ class Vector:
 
     def sqrmagnitude(self) -> float:
         return self.x * self.x + self.y * self.y
+    
+    def distance(self, other: Self) -> float:
+        return (self - other).magnitude()
+    
+    def sqrdistance(self, other: Self) -> float:
+        return (self - other).sqrmagnitude()
 
     def angle(self) -> float:
         if self.x == 0:
@@ -91,9 +97,9 @@ class InputHandler:
 
 
 class Car:
-    def __init__(self, spawnpoint: Vector, sprite, acceleration: float, angular_acceleration: float, air_resistance: float, friction_coefficient: float, angular_friction: float):
-        self.sprite = sprite
-
+    def __init__(self, spawnpoint: Vector, sprite: pygame.Surface, acceleration: float, angular_acceleration: float, air_resistance: float, friction_coefficient: float, angular_friction: float):
+        self.sprite: pygame.Surface = sprite
+        
         self.position: Vector = spawnpoint
         self.rotation: float = 0
 
@@ -108,14 +114,18 @@ class Car:
         self.angular_friction: float = angular_friction
 
         self.wheels: float = 0
+    
+    def rest(self):
+        self.velocity = Vector(0, 0)
+        self.angular_velocity = 0
 
-    def accelerate(self, multiplier):
+    def accelerate(self, multiplier, spf):
         angle = self.rotation * DEG2RAD
-        self.velocity.x += multiplier * self.acceleration * np.cos(angle)
-        self.velocity.y -= multiplier * self.acceleration * np.sin(angle)
+        self.velocity.x += multiplier * self.acceleration * np.cos(angle) * spf
+        self.velocity.y -= multiplier * self.acceleration * np.sin(angle) * spf
 
-    def rotate(self, multiplier):
-        self.angular_velocity += multiplier * self.angular_acceleration
+    def rotate(self, multiplier, spf):
+        self.angular_velocity += multiplier * self.angular_acceleration * spf
 
         if np.fabs(self.angular_velocity) > MAX_ANGULAR_VELOCITY:
             self.angular_velocity = MAX_ANGULAR_VELOCITY * np.sign(self.angular_velocity)
@@ -127,7 +137,7 @@ class Car:
         friction_force: Vector = -self.velocity.normalized() * (self.friction_coefficient * np.fabs(np.sin(self.velocity.angle() - self.rotation * DEG2RAD)))
         delta_v: Vector = friction_force * spf
 
-        if self.velocity.magnitude() < delta_v.magnitude():
+        if self.velocity.sqrmagnitude() < delta_v.sqrmagnitude():
             self.velocity = Vector(0, 0)
         else:
             self.velocity += delta_v
@@ -142,6 +152,17 @@ class Car:
             self.angular_velocity = 0
         else:
             self.angular_velocity += delta_rot
+
+    def get_hitbox(self) -> pygame.Rect:
+        rotated_sprite = pygame.transform.rotate(self.sprite, self.rotation)
+
+        angle: float = self.rotation * DEG2RAD
+        radius: float = self.sprite.get_width() * 0.28
+        center: Vector = Vector(self.position.x - rotated_sprite.get_width() * 0.5, self.position.y - rotated_sprite.get_height() * 0.5)
+        final: Vector = Vector(center.x + radius * np.cos(angle), center.y - radius * np.sin(angle))
+
+        rect = rotated_sprite.get_rect()
+        return rect.move(final.x, final.y)
 
     def blit(self, screen):
         rotated_sprite = pygame.transform.rotate(self.sprite, self.rotation)

@@ -8,6 +8,20 @@ import tensorflow as tf
 keras = tf.keras
 
 
+class Environment:
+    action_space: any
+    observation_space: any
+
+    def reset(self):
+        pass
+
+    def render(self):
+        pass
+
+    def step(self, action):
+        pass
+
+
 class DQN:
     def __init__(self, env, lr, gamma, epsilon, epsilon_decay):
         self.env = env
@@ -50,7 +64,6 @@ class DQN:
         self.replay_memory_buffer.append((state, action, reward, next_state, done))
 
     def learn_and_update_weights_by_reply(self):
-
         # replay_memory_buffer size check
         if len(self.replay_memory_buffer) < self.batch_size or self.counter != 0:
             return
@@ -82,7 +95,7 @@ class DQN:
         random_sample = random.sample(self.replay_memory_buffer, self.batch_size)
         return random_sample
 
-    def train(self, num_episodes=2000, can_stop=True):
+    def train(self, env: Environment, num_episodes=2000, can_stop=True):
         for episode in range(num_episodes):
             state = env.reset()
             reward_for_episode = 0
