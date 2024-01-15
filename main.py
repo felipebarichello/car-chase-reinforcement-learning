@@ -32,7 +32,7 @@ ANGULAR_FRICTION = 200
 MAX_ANGULAR_VELOCITY = 400
 
 SAFE_RADIUS = 400
-SECONDS_TO_ESCAPE = 8
+SECONDS_TO_ESCAPE = 6
 
 # 0 => Player controls criminal; ML agent controls police
 # 1 => Player controls police; ML agent controls criminal
@@ -51,7 +51,7 @@ MAX_EPISODES = 1000
 MODEL_DIR = "saved_models/"
 
 # Whether or not to render the game when ML_MODE greater than 2
-RENDER = False
+RENDER = True
 
 
 # Library objects
@@ -101,7 +101,7 @@ def main():
         # setting up params
         lr = 0.001
         epsilon = 1.0
-        epsilon_decay = 0.995
+        epsilon_decay = 0.992
         gamma = 0.99
         training_episodes = MAX_EPISODES
         save_dir: any
@@ -492,8 +492,6 @@ def env_reward(self: Environment, c: int, result: int):
             return -50
         elif result == 1:
             return -100
-        elif result == -2:
-            return 50
     else:
         if result == 0:
             P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf
