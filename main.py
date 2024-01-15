@@ -42,7 +42,7 @@ SECONDS_TO_ESCAPE = 8
 # 5 => ML Agents control both, and both learn
 ML_MODE = 5
 
-C_DIST_REWARD = 10
+C_DIST_REWARD = 30
 C_CHASE_DURATION_REWARD = 5
 P_CLOSE_REWARD = 30
 
