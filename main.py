@@ -17,7 +17,7 @@ keras = tf.keras
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 
-I_SCREEN_HEIGHT = 1 / SCREEN_HEIGHT
+I_SCREEN_WIDTH = 1 / SCREEN_WIDTH
 
 FPS = 60
 
@@ -348,8 +348,8 @@ def make_env() -> Environment:
         env.render = env_not_render.__get__(env)
 
     env.reward_continuous = (lambda self, c: (
-        criminal.position.distance(police.position) * I_SCREEN_HEIGHT * C_DIST_REWARD * spf if c == 0 else (
-        P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_HEIGHT) * spf)
+        criminal.position.distance(police.position) * I_SCREEN_WIDTH * C_DIST_REWARD * spf if c == 0 else (
+        P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf)
     )).__get__(env)
 
     env.reward_caught = (lambda self, c: (
