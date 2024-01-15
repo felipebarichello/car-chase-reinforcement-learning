@@ -494,9 +494,9 @@ def env_reward(self: Environment, c: int, result: int):
             return -100
     else:
         if result == 0:
-            P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf
+            return P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf
         elif result == 2:
-            100 + P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf * (SECONDS_TO_ESCAPE * fps - frames_to_escape)
+            return 100 + P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf * (SECONDS_TO_ESCAPE * fps - frames_to_escape)
         elif result == -1:
             return -100
 
