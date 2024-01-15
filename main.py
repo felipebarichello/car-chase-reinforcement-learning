@@ -39,7 +39,8 @@ SECONDS_TO_ESCAPE = 8
 # 2 => ML Agents control both, but do not learn
 # 3 => ML Agents control both, and criminal learns
 # 4 => ML Agents control both, and police learns
-ML_MODE = 4
+# 5 => ML Agents control both, and both learn
+ML_MODE = 5
 
 C_DIST_REWARD = 5
 C_CHASE_DURATION_REWARD = 2
@@ -47,7 +48,6 @@ P_CLOSE_REWARD = 5
 
 MAX_EPISODES = 100
 
-LOAD_MODEL = True
 MODEL_DIR = "saved_models/"
 
 # Whether or not to render the game when ML_MODE greater than 2
@@ -104,38 +104,63 @@ def main():
         epsilon_decay = 0.995
         gamma = 0.99
         training_episodes = MAX_EPISODES
-        save_dir: str
+        save_dir: any
 
         if ML_MODE == 3:
             save_dir = MODEL_DIR + "criminal/"
         elif ML_MODE == 4:
             save_dir = MODEL_DIR + "police/"
+        elif ML_MODE == 5:
+            save_dir = [MODEL_DIR + "criminal/", MODEL_DIR + "police/"]
 
-        model = DQN(env, lr, gamma, epsilon, epsilon_decay)
+        if ML_MODE == 5:
+            model = [DQN(env, lr, gamma, epsilon, epsilon_decay), DQN(env, lr, gamma, epsilon, epsilon_decay)]
+        else:
+            model = DQN(env, lr, gamma, epsilon, epsilon_decay)
         
-        if LOAD_MODEL:
-            try:
+        try:
+            if ML_MODE == 5:
+                model[0].model = keras.models.load_model(save_dir[0] + "model.keras")
+                model[0].epsilon = pickle.loads(open(save_dir[0] + "network.pkl", "rb").read())
+                model[1].model = keras.models.load_model(save_dir[1] + "model.keras")
+                model[1].epsilon = pickle.loads(open(save_dir[1] + "network.pkl", "rb").read())
+            else:
                 model.model = keras.models.load_model(save_dir + "model.keras")
                 model.epsilon = pickle.loads(open(save_dir + "network.pkl", "rb").read())
-            except:
-                pass
+        except:
+            pass
 
-        model.train(env, training_episodes, False, SECONDS_TO_ESCAPE * fps * 2) # Should never be reached
+        if ML_MODE == 5:
+            DQN.train_multiagent(model, env, training_episodes, False, SECONDS_TO_ESCAPE * fps * 2) # Should never be reached
+        else:
+            model.train(env, training_episodes, False, SECONDS_TO_ESCAPE * fps * 2)
 
         # Save trained model
-        os.makedirs(save_dir, exist_ok=True)
-        model.save(save_dir + "model.keras")
+        if ML_MODE == 5:
+            for i in range(2):
+                os.makedirs(save_dir[i], exist_ok=True)
+                model[i].save(save_dir[i] + "model.keras")
 
-        with open(save_dir + "network.pkl", "wb") as file:
-            file.write(pickle.dumps(model.epsilon))
+                with open(save_dir[i] + "network.pkl", "wb") as file:
+                    file.write(pickle.dumps(model[i].epsilon))
 
-        # Save Rewards list
-        pickle.dump(model.rewards_list, open(save_dir + "rewards_list.p", "wb"))
-        rewards_list = pickle.load(open(save_dir + "rewards_list.p", "rb"))
+                # Save Rewards list
+                pickle.dump(model[i].rewards_list, open(save_dir[i] + "rewards_list.p", "wb"))
+                rewards_list = pickle.load(open(save_dir[i] + "rewards_list.p", "rb"))
+        else:   
+            os.makedirs(save_dir, exist_ok=True)
+            model.save(save_dir + "model.keras")
 
-        # plot reward in graph
-        reward_df = pd.DataFrame(rewards_list)
-        plot_df(reward_df, "Figure 1: Reward for each training episode", "Reward for each training episode", "Episode","Reward")
+            with open(save_dir + "network.pkl", "wb") as file:
+                file.write(pickle.dumps(model.epsilon))
+
+            # Save Rewards list
+            pickle.dump(model.rewards_list, open(save_dir + "rewards_list.p", "wb"))
+            rewards_list = pickle.load(open(save_dir + "rewards_list.p", "rb"))
+
+            # plot reward in graph
+            reward_df = pd.DataFrame(rewards_list)
+            plot_df(reward_df, "Figure 1: Reward for each training episode", "Reward for each training episode", "Episode","Reward")
 
         # # Test the model
         # trained_model = keras.models.load_model(save_dir + "trained_model.keras")
@@ -313,45 +338,38 @@ def make_env() -> Environment:
 
     env.reset = env_reset.__get__(env)
     env.step  = env_step.__get__(env)
+    env.multiagent_step = env_multiagent_step.__get__(env)
 
     if RENDER:
         env.render = env_render.__get__(env)
     else:
         env.render = env_not_render.__get__(env)
 
-    if ML_MODE == 3:
-        env.reward_continuous = (lambda self: criminal.position.distance(police.position) * I_SCREEN_HEIGHT * C_DIST_REWARD * spf).__get__(env)
-        env.reward_caught = (lambda self: -100 + frames_to_escape * spf * C_CHASE_DURATION_REWARD).__get__(env)
-        env.reward_escaped = (lambda self: 100).__get__(env)
-    elif ML_MODE == 4:
-        env.reward_continuous = (lambda self: P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_HEIGHT) * spf).__get__(env)
-        env.reward_caught = (lambda self: 100 + self.reward_continuous() * (1 + SECONDS_TO_ESCAPE - frames_to_escape)).__get__(env)
-        env.reward_escaped = (lambda self: -100).__get__(env)
+    env.reward_continuous = (lambda self, c: (
+        criminal.position.distance(police.position) * I_SCREEN_HEIGHT * C_DIST_REWARD * spf if c == 0 else (
+        P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_HEIGHT) * spf)
+    )).__get__(env)
+
+    env.reward_caught = (lambda self, c: (
+        -100 + frames_to_escape * spf * C_CHASE_DURATION_REWARD if c == 0 else (
+        100 + self.reward_continuous(c) * (1 + SECONDS_TO_ESCAPE - frames_to_escape))
+    )).__get__(env)
+
+    env.reward_escaped = (lambda self, c: 100 if c == 0 else -100).__get__(env)
 
     return env
 
 
 def get_state() -> np.ndarray:
-    if ML_MODE == 3:
-        return np.array([
-            criminal.position.x, criminal.position.y,
-            criminal.velocity.magnitude(), criminal.velocity.angle(),
-            criminal.rotation, criminal.angular_velocity,
-            criminal.position.distance(police.position),
-            police.position.x, police.position.y,
-            police.velocity.magnitude(), police.velocity.angle(),
-            police.rotation, police.angular_velocity,
-        ])
-    elif ML_MODE == 4:
-        return np.array([
-            police.position.x, police.position.y,
-            police.velocity.magnitude(), police.velocity.angle(),
-            police.rotation, police.angular_velocity,
-            police.position.distance(criminal.position),
-            criminal.position.x, criminal.position.y,
-            criminal.velocity.magnitude(), criminal.velocity.angle(),
-            criminal.rotation, criminal.angular_velocity,
-        ])
+    return np.array([
+        criminal.position.x, criminal.position.y,
+        criminal.velocity.magnitude(), criminal.velocity.angle(),
+        criminal.rotation, criminal.angular_velocity,
+        criminal.position.distance(police.position),
+        police.position.x, police.position.y,
+        police.velocity.magnitude(), police.velocity.angle(),
+        police.rotation, police.angular_velocity,
+    ])
 
 
 # Returns state
@@ -395,14 +413,60 @@ def env_step(self: Environment, action: int) -> Tuple[np.ndarray, float, bool, N
     reward = 0
     done = result != 0
 
+    car_n = 0 if ML_MODE == 3 else 1
+
     if not done:
-        reward = self.reward_continuous()
+        reward = self.reward_continuous(car_n)
     elif result == 1:
-        reward = self.reward_caught()
+        reward = self.reward_caught(car_n)
     elif result == -1:
-        reward = self.reward_escaped()
+        reward = self.reward_escaped(car_n)
 
     return next_state, reward, done, None
+
+
+def env_multiagent_step(self: Environment, actions: np.array) -> Tuple[np.ndarray, np.array, bool, None]:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            self.quit_requested = True
+
+    inputs.update()
+    inputs.get_global()
+
+    if inputs.quit:
+        self.quit_requested = True
+
+    criminal_actions = Actions()
+    criminal_actions.forward  = True if actions[0] <  3 else False
+    criminal_actions.backward = True if actions[0] >= 6 else False
+    criminal_actions.left     = True if actions[0] % 3 == 0 else False
+    criminal_actions.right    = True if actions[0] % 3 == 2 else False
+
+    police_actions = Actions()
+    police_actions.forward  = True if actions[1] <  3 else False
+    police_actions.backward = True if actions[1] >= 6 else False
+    police_actions.left     = True if actions[1] % 3 == 0 else False
+    police_actions.right    = True if actions[1] % 3 == 2 else False
+
+    result: int
+
+    result = update((criminal_actions, police_actions))
+        
+    next_state = get_state()
+    done = result != 0
+    rewards = [0, 0]
+
+    if not done:
+        rewards[0] = self.reward_continuous(0)
+        rewards[1] = self.reward_continuous(1)
+    elif result == 1:
+        rewards[0] = self.reward_caught(0)
+        rewards[1] = self.reward_caught(1)
+    elif result == -1:
+        rewards[0] = self.reward_escaped(0)
+        rewards[1] = self.reward_escaped(1)
+
+    return next_state, rewards, done, None
 
 
 def env_render(env: Environment) -> None:

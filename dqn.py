@@ -33,6 +33,10 @@ class Environment:
     def step(self, action: np.array) -> Tuple[np.ndarray, float, bool, None]:
         pass
 
+    # Returns next_state, rewards, done, info
+    def multiagent_step(self, actions: np.array) -> Tuple[np.ndarray, np.array, bool, None]:
+        pass
+
 
 class DQN:
     def __init__(self, env, lr, gamma, epsilon, epsilon_decay):
@@ -107,7 +111,7 @@ class DQN:
         random_sample = random.sample(self.replay_memory_buffer, self.batch_size)
         return random_sample
 
-    def train(self, env: Environment, num_episodes=2000, can_stop=True, num_steps=1000):
+    def train(self, env: Environment, num_episodes=2000, can_stop=False, num_steps=1000):
         for episode in range(num_episodes):
             state = env.reset()
             reward_for_episode = 0
@@ -151,3 +155,52 @@ class DQN:
 
     def save(self, name):
         self.model.save(name)
+
+    def train_multiagent(networks, env: Environment, num_episodes=2000, can_stop=False, num_steps=1000):
+        for episode in range(num_episodes):
+            state = env.reset()
+            state = np.reshape(state, [1, networks[0].num_observation_space])
+
+            for net in networks:
+                net._reward_for_episode = 0
+
+            for step in range(num_steps):
+                env.render()
+                received_actions = []
+
+                for net in networks:
+                    received_actions.append(net.get_action(state))
+
+                next_state, rewards, done, info = env.multiagent_step(received_actions)
+
+                next_state = np.reshape(next_state, [1, networks[0].num_observation_space])
+
+                # Store the experience in replay memory
+                for i, net in enumerate(networks):
+                    net.add_to_replay_memory(state, received_actions[i], rewards[i], next_state, done)
+                    net._reward_for_episode += rewards[i]
+                    net.update_counter()
+                    net.learn_and_update_weights_by_reply()
+
+                state = next_state
+
+                if done:
+                    break
+            
+            for i, net in enumerate(networks):
+                net.rewards_list.append(net._reward_for_episode)
+
+                # Decay the epsilon after each experience completion
+                if net.epsilon > net.epsilon_min:
+                    net.epsilon *= net.epsilon_decay
+
+                # Check for breaking condition
+                net._last_rewards_mean = np.mean(net.rewards_list[-100:])
+                if net._last_rewards_mean > 200 and can_stop:
+                    print("DQN Training Complete...")
+                    break
+
+                print("Net ", i, ": ", episode, "\t: Episode || Reward: ",net._reward_for_episode, "\t|| Average Reward: ",net._last_rewards_mean, "\t epsilon: ", net.epsilon )
+
+            if env.quit_requested:
+                break
