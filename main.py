@@ -44,14 +44,14 @@ ML_MODE = 5
 
 C_DIST_REWARD = 60
 C_CHASE_DURATION_REWARD = 5
-P_CLOSE_REWARD = 600
+P_CLOSE_REWARD = 60
 
-MAX_EPISODES = 10000
+MAX_EPISODES = 1000
 
 MODEL_DIR = "saved_models/"
 
 # Whether or not to render the game when ML_MODE greater than 2
-RENDER = True
+RENDER = False
 
 
 # Library objects
@@ -292,18 +292,23 @@ def update(actions: Tuple[Actions, Actions]) -> int:
     police_hitbox = police.get_hitbox()
     criminal_hitbox = criminal.get_hitbox()
 
+    if criminal_hitbox.colliderect(police_hitbox):
+        return 2
+
+
     if (
-        criminal_hitbox.colliderect(police_hitbox)
-        or criminal_hitbox.left < 0 or criminal_hitbox.right > (SCREEN_WIDTH)
+           criminal_hitbox.left < 0 or criminal_hitbox.right > (SCREEN_WIDTH)
         or criminal_hitbox.top  < 0 or criminal_hitbox.bottom > (SCREEN_HEIGHT)
     ):
         return 1
     
     frames_to_escape -= 1
     
+    if frames_to_escape <= 0:
+        return -2
+
     if (
-        frames_to_escape <= 0
-        or police_hitbox.left < 0 or police_hitbox.right > (SCREEN_WIDTH)
+           police_hitbox.left < 0 or police_hitbox.right > (SCREEN_WIDTH)
         or police_hitbox.top  < 0 or police_hitbox.bottom > (SCREEN_HEIGHT)
     ):
         return -1
@@ -363,17 +368,7 @@ def make_env() -> Environment:
     else:
         env.render = env_not_render.__get__(env)
 
-    env.reward_continuous = (lambda self, c: (
-        criminal.position.distance(police.position) * I_SCREEN_WIDTH * C_DIST_REWARD * spf if c == 0 else (
-        P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf)
-    )).__get__(env)
-
-    env.reward_caught = (lambda self, c: (
-        -100 + frames_to_escape * spf * C_CHASE_DURATION_REWARD if c == 0 else (
-        100 + self.reward_continuous(c) * (SECONDS_TO_ESCAPE * fps - frames_to_escape))
-    )).__get__(env)
-
-    env.reward_escaped = (lambda self, c: 100 if c == 0 else -100).__get__(env)
+    env.reward = env_reward.__get__(env)
 
     return env
 
@@ -476,17 +471,7 @@ def env_multiagent_step(self: Environment, actions: np.array) -> Tuple[np.ndarra
         
     next_state = get_state()
     done = result != 0
-    rewards = [0, 0]
-
-    if not done:
-        rewards[0] = self.reward_continuous(0)
-        rewards[1] = self.reward_continuous(1)
-    elif result == 1:
-        rewards[0] = self.reward_caught(0)
-        rewards[1] = self.reward_caught(1)
-    elif result == -1:
-        rewards[0] = self.reward_escaped(0)
-        rewards[1] = self.reward_escaped(1)
+    rewards = [self.reward(0, result), self.reward(1, result)]
 
     return next_state, rewards, done, None
 
@@ -497,6 +482,27 @@ def env_render(env: Environment) -> None:
 
 def env_not_render(env: Environment) -> None:
     pass
+
+
+def env_reward(self: Environment, c: int, result: int):
+    if c == 0:
+        if result == 0:
+            return criminal.position.distance(police.position) * I_SCREEN_WIDTH * C_DIST_REWARD * spf
+        elif result == 2:
+            return -50
+        elif result == 1:
+            return -100
+        elif result == -2:
+            return 50
+    else:
+        if result == 0:
+            P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf
+        elif result == 2:
+            100 + P_CLOSE_REWARD * (1 - police.position.distance(criminal.position) * I_SCREEN_WIDTH) * spf * (SECONDS_TO_ESCAPE * fps - frames_to_escape)
+        elif result == -1:
+            return -100
+
+    return 0
 
 
 def test_already_trained_model(trained_model):
