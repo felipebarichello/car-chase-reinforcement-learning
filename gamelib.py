@@ -45,10 +45,10 @@ class Vector:
         return self.x * self.x + self.y * self.y
     
     def distance(self, other: Self) -> float:
-        return (self - other).magnitude()
+        return (other - self).magnitude()
     
     def sqrdistance(self, other: Self) -> float:
-        return (self - other).sqrmagnitude()
+        return (other - self).sqrmagnitude()
 
     def angle(self) -> float:
         if self.x == 0:
@@ -188,3 +188,12 @@ class Car:
         final: Vector = Vector(center.x + radius * np.cos(angle), center.y - radius * np.sin(angle))
 
         screen.blit(rotated_sprite, (final.x, final.y))
+
+
+def normalize_angle(angle: float) -> float:
+    if angle > 180:
+        return angle - 360
+    elif angle < -180:
+        return angle + 360
+    else:
+        return angle

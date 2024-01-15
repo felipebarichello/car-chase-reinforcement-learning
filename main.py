@@ -21,7 +21,7 @@ I_SCREEN_HEIGHT = 1 / SCREEN_HEIGHT
 
 FPS = 60
 
-CAR_SCALING = 0.3
+CAR_SCALING = 0.5
 
 ACCELERATION = 72000
 ANGULAR_ACCELERATION = 36000
@@ -43,7 +43,7 @@ SECONDS_TO_ESCAPE = 8
 ML_MODE = 5
 
 C_DIST_REWARD = 10
-C_CHASE_DURATION_REWARD = 2
+C_CHASE_DURATION_REWARD = 5
 P_CLOSE_REWARD = 10
 
 MAX_EPISODES = 1000
@@ -327,7 +327,9 @@ def make_env() -> Environment:
         0, # velocity angle
         0, # angle
         0, # angular velocity
+        0, # angle to opponent
         0, # distance to opponent
+        0, # angle to opponent
         0, # opponent x
         0, # opponent y
         0, # opponent velocity magnitude
@@ -352,7 +354,7 @@ def make_env() -> Environment:
 
     env.reward_caught = (lambda self, c: (
         -100 + frames_to_escape * spf * C_CHASE_DURATION_REWARD if c == 0 else (
-        100 + self.reward_continuous(c) * (1 + SECONDS_TO_ESCAPE - frames_to_escape))
+        100 + self.reward_continuous(c) * (1 + SECONDS_TO_ESCAPE * fps - frames_to_escape))
     )).__get__(env)
 
     env.reward_escaped = (lambda self, c: 100 if c == 0 else -100).__get__(env)
@@ -361,14 +363,18 @@ def make_env() -> Environment:
 
 
 def get_state() -> np.ndarray:
+    angle_between = (criminal.position - police.position).angle()
+
     return np.array([
         criminal.position.x, criminal.position.y,
         criminal.velocity.magnitude(), criminal.velocity.angle(),
-        criminal.rotation, criminal.angular_velocity,
+        normalize_angle(criminal.rotation), criminal.angular_velocity,
+        normalize_angle(criminal.rotation) * DEG2RAD - angle_between,
         criminal.position.distance(police.position),
+        normalize_angle(police.rotation) * DEG2RAD - angle_between,
         police.position.x, police.position.y,
         police.velocity.magnitude(), police.velocity.angle(),
-        police.rotation, police.angular_velocity,
+        normalize_angle(police.rotation), police.angular_velocity,
     ])
 
 
