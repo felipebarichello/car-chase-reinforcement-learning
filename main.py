@@ -42,9 +42,9 @@ SECONDS_TO_ESCAPE = 8
 # 5 => ML Agents control both, and both learn
 ML_MODE = 5
 
-C_DIST_REWARD = 30
+C_DIST_REWARD = 60
 C_CHASE_DURATION_REWARD = 5
-P_CLOSE_REWARD = 30
+P_CLOSE_REWARD = 60
 
 MAX_EPISODES = 1000
 
@@ -179,6 +179,17 @@ def main():
         return
     
 
+    if ML_MODE == 0 or ML_MODE == 2:
+        # Criminal is ML Agent
+        criminal.model = keras.models.load_model(MODEL_DIR + "criminal/model.keras")
+        criminal.auto = lambda state: actions_from_net(criminal, state)
+
+    if ML_MODE == 1 or ML_MODE == 2:
+        # Police is ML Agent
+        police.model = keras.models.load_model(MODEL_DIR + "police/model.keras")
+        police.auto = lambda state: actions_from_net(police, state)
+
+
     reset()
 
     while True:
@@ -245,19 +256,24 @@ def input_update() -> Tuple[Actions, Actions]:
         else:
             screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
             fullscreen = True
+        
+    state = get_state()
 
-    c_actions = inputs.get_actions() if ML_MODE == 0 else actions_from_nn(criminal, police)
-    p_actions = inputs.get_actions() if ML_MODE == 1 else actions_from_nn(police, criminal)
+    c_actions = inputs.get_actions() if ML_MODE == 1 else criminal.auto(state)
+    p_actions = inputs.get_actions() if ML_MODE == 0 else police.auto(state)
 
     return (c_actions, p_actions)
 
 
-def actions_from_nn(car: Car, other: Car) -> Actions:
+def actions_from_net(agent: Car, state: np.ndarray) -> Actions:
+    state = np.reshape(state, [1, state.shape[0]])
+    selected = np.argmax(agent.model.predict(state))
+
     actions = Actions()
-    actions.forward = False
-    actions.backward = False
-    actions.left = False
-    actions.right = False
+    actions.forward  = True if selected <  3 else False
+    actions.backward = True if selected >= 6 else False
+    actions.left     = True if selected % 3 == 0 else False
+    actions.right    = True if selected % 3 == 2 else False
     return actions
 
 
@@ -354,7 +370,7 @@ def make_env() -> Environment:
 
     env.reward_caught = (lambda self, c: (
         -100 + frames_to_escape * spf * C_CHASE_DURATION_REWARD if c == 0 else (
-        100 + self.reward_continuous(c) * (1 + SECONDS_TO_ESCAPE * fps - frames_to_escape))
+        100 + self.reward_continuous(c) * (SECONDS_TO_ESCAPE * fps - frames_to_escape))
     )).__get__(env)
 
     env.reward_escaped = (lambda self, c: 100 if c == 0 else -100).__get__(env)
