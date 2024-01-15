@@ -214,8 +214,8 @@ def reset():
     global criminal, police, frames_to_escape
 
     while True:
-        criminal.position = Vector(np.random.rand() * SCREEN_WIDTH, np.random.rand() * SCREEN_HEIGHT)
-        police.position = Vector(np.random.rand() * SCREEN_WIDTH, np.random.rand() * SCREEN_HEIGHT)
+        criminal.position = Vector(np.random.rand() * SCREEN_WIDTH * 0.8 + SCREEN_WIDTH * 0.1, np.random.rand() * SCREEN_HEIGHT * 0.8 + SCREEN_HEIGHT * 0.1)
+        police.position   = Vector(np.random.rand() * SCREEN_WIDTH * 0.8 + SCREEN_WIDTH * 0.1, np.random.rand() * SCREEN_HEIGHT * 0.8 + SCREEN_HEIGHT * 0.1)
 
         if criminal.position.sqrdistance(police.position) > (SAFE_RADIUS) * (SAFE_RADIUS):
             break
