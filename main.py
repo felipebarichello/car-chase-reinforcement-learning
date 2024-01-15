@@ -101,7 +101,7 @@ def main():
         # setting up params
         lr = 0.001
         epsilon = 1.0
-        epsilon_decay = 0.992
+        epsilon_decay = 0.995
         gamma = 0.99
         training_episodes = MAX_EPISODES
         save_dir: any
