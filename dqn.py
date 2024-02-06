@@ -73,7 +73,7 @@ class DQN:
         if np.random.rand() < self.epsilon:
             return random.randrange(self.num_action_space)
 
-        predicted_actions = self.model.predict(state)
+        predicted_actions = self.model.predict(state, verbose=0)
         return np.argmax(predicted_actions[0])
 
     def add_to_replay_memory(self, state, action, reward, next_state, done):
